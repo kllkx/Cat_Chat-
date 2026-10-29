@@ -1,0 +1,251 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>پنل مدیریت بات‌نت</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            background: #0a0e14;
+            color: #b0c4de;
+            font-family: 'Courier New', monospace;
+            height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+        .panel {
+            background: #0f151d;
+            width: 100%;
+            max-width: 1100px;
+            border: 1px solid #1e2d3a;
+            border-radius: 12px;
+            padding: 25px;
+            box-shadow: 0 0 50px rgba(0, 200, 255, 0.03);
+        }
+        .header {
+            display: flex;
+            justify-content: space-between;
+            border-bottom: 1px solid #1a2632;
+            padding-bottom: 12px;
+            margin-bottom: 20px;
+            font-size: 14px;
+            color: #6a8b9e;
+            flex-wrap: wrap;
+        }
+        .header span { color: #b0e0e6; }
+        .status-bar {
+            background: #0b1119;
+            padding: 12px 18px;
+            border-radius: 8px;
+            border-right: 4px solid #00ccaa;
+            margin-bottom: 20px;
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: space-between;
+            font-size: 13px;
+            color: #8aaec9;
+        }
+        .status-bar .online { color: #00ccaa; font-weight: bold; }
+        .status-bar .count { color: #ffffff; }
+        .log-box {
+            background: #060a10;
+            border: 1px solid #1a2733;
+            border-radius: 10px;
+            padding: 18px;
+            height: 420px;
+            overflow-y: auto;
+            font-size: 13px;
+            line-height: 1.8;
+            white-space: pre-wrap;
+            word-break: break-word;
+            color: #9bb9d4;
+            direction: ltr;
+            text-align: left;
+        }
+        .log-box .time { color: #4f7a8c; }
+        .log-box .success { color: #7ddfb0; }
+        .log-box .error { color: #f28b82; }
+        .log-box .command { color: #e5c07b; }
+        .log-box .info { color: #61afef; }
+        .log-box .warning { color: #e5c07b; }
+        .log-box .visitor { color: #d4a0ff; }
+        .footer {
+            margin-top: 18px;
+            display: flex;
+            justify-content: space-between;
+            font-size: 12px;
+            color: #3e5a6b;
+            border-top: 1px solid #1a2632;
+            padding-top: 14px;
+            flex-wrap: wrap;
+        }
+        .footer .key { color: #6a8fa0; }
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: #0b1118; }
+        ::-webkit-scrollbar-thumb { background: #1f3342; border-radius: 10px; }
+        .visitor-badge {
+            background: #1a2632;
+            padding: 4px 12px;
+            border-radius: 20px;
+            color: #d4a0ff;
+            border: 1px solid #3a4a5a;
+        }
+    </style>
+</head>
+<body>
+<div class="panel">
+    <div class="header">
+        <div>پنل مدیریت بات‌نت <span>نسخه 2.4.1</span></div>
+        <div>زمان فعالیت <span id="uptime">00:00:00</span></div>
+    </div>
+
+    <div class="status-bar">
+        <div>وضعیت: <span class="online">فعال</span></div>
+        <div>گره‌های آنلاین: <span class="count" id="nodeCount">47</span></div>
+        <div>وظایف در انتظار: <span class="count">12</span></div>
+        <div>محفظه بارگذاری: <span class="count">فعال</span></div>
+        <div class="visitor-badge">👤 بازدیدکنندگان: <span id="visitorCount">0</span></div>
+    </div>
+
+    <div class="log-box" id="logBox"></div>
+
+    <div class="footer">
+        <div>کلید جلسه: <span class="key">0x7F3A9C2D</span> | گره‌ها: <span class="key" id="nodeCountFooter">47</span></div>
+        <div>زمان فعالیت: <span class="key" id="uptimeFooter">00:00:00</span></div>
+    </div>
+</div>
+
+<script>
+    // ========== شمارنده بازدید ==========
+    async function updateVisitor() {
+        try {
+            const response = await fetch('/visit');
+            const data = await response.json();
+            document.getElementById('visitorCount').innerText = data.visits;
+            // اگر کاربر جدیدی وارد شده، لاگ بزن
+            if (data.newVisitor) {
+                addVisitorLog(data.visitorIP);
+            }
+        } catch (e) {
+            // اگر سرور جواب نداد، از localStorage استفاده کن
+            let count = localStorage.getItem('visitorCount') || 0;
+            count = parseInt(count) + 1;
+            localStorage.setItem('visitorCount', count);
+            document.getElementById('visitorCount').innerText = count;
+        }
+    }
+
+    // ========== تاریخ و ساعت واقعی ==========
+    function getRealTime() {
+        const now = new Date();
+        const year = now.getFullYear();
+        const month = String(now.getMonth() + 1).padStart(2, '0');
+        const day = String(now.getDate()).padStart(2, '0');
+        const hours = String(now.getHours()).padStart(2, '0');
+        const minutes = String(now.getMinutes()).padStart(2, '0');
+        const seconds = String(now.getSeconds()).padStart(2, '0');
+        return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
+    }
+
+    // ========== آپدیت آپتایم ==========
+    let startTime = Date.now();
+    function updateUptime() {
+        const elapsed = Math.floor((Date.now() - startTime) / 1000);
+        const h = String(Math.floor(elapsed / 3600)).padStart(2, '0');
+        const m = String(Math.floor((elapsed % 3600) / 60)).padStart(2, '0');
+        const s = String(elapsed % 60).padStart(2, '0');
+        const uptime = `${h}:${m}:${s}`;
+        document.getElementById('uptime').innerText = uptime;
+        document.getElementById('uptimeFooter').innerText = uptime;
+    }
+    setInterval(updateUptime, 1000);
+    updateUptime();
+
+    // ========== لاگ‌ها ==========
+    const logBox = document.getElementById('logBox');
+
+    function addVisitorLog(ip) {
+        const line = `[<span class="time">${getRealTime()}</span>] <span class="visitor">🔹 کاربر جدید متصل شد | آی‌پی: ${ip || 'نامشخص'}</span>`;
+        logBox.innerHTML += line + '\n';
+        logBox.scrollTop = logBox.scrollHeight;
+    }
+
+    // ========== لاگ‌های اولیه ==========
+    const logs = [
+        { type: 'info', msg: 'گره جدید متصل شد | آی‌پی: 192.168.1.47 | شناسه: N-1042' },
+        { type: 'success', msg: 'مصافحه با موفقیت انجام شد | گره N-1042 احراز هویت شد' },
+        { type: 'command', msg: 'دستور ارسال شد: اسکن شبکه محلی --سابنت 24' },
+        { type: 'info', msg: 'پاسخ گره N-1042: ۳ میزبان فعال، ۲ پورت باز' },
+        { type: 'warning', msg: 'گره N-0891 پاسخ نداد | تلاش مجدد ۲ از ۳' },
+        { type: 'success', msg: 'وظیفه گره N-1042 تکمیل شد | خروجی ذخیره شد' },
+        { type: 'info', msg: 'کلید SSH به گره N-1042 تزریق شد | کاربر: روت' },
+        { type: 'error', msg: 'گره N-0673 آفلاین شد | آخرین فعالیت ۳ دقیقه پیش' },
+        { type: 'command', msg: 'دستور همگانی ارسال شد: به‌روزرسانی --اجباری --بارگذاری بیکن' },
+        { type: 'info', msg: '۱۲ گره تأیید کردند | ۲ گره در انتظار' },
+        { type: 'success', msg: 'بارگذاری به ۹ گره تحویل داده شد | نرخ موفقیت ۷۵٪' }
+    ];
+
+    let idx = 0;
+    function addLog() {
+        if (idx < logs.length) {
+            const entry = logs[idx];
+            const timeClass = entry.type === 'success' ? 'success' :
+                              entry.type === 'error' ? 'error' :
+                              entry.type === 'command' ? 'command' :
+                              entry.type === 'warning' ? 'warning' : 'info';
+            const line = `[<span class="time">${getRealTime()}</span>] <span class="${timeClass}">${entry.msg}</span>`;
+            logBox.innerHTML += line + '\n';
+            logBox.scrollTop = logBox.scrollHeight;
+            idx++;
+        }
+    }
+
+    // اضافه کردن لاگ‌های اولیه با تاخیر
+    logs.forEach((_, i) => {
+        setTimeout(() => addLog(), i * 800);
+    });
+
+    // ========== لاگ‌های تصادفی جدید ==========
+    const randomLogs = [
+        { type: 'info', msg: 'دریافت ضربان قلب از گره N-1042' },
+        { type: 'success', msg: 'تونل SSH روی ۹ گره پایدار است' },
+        { type: 'command', msg: 'دستور ارسال شد: گرفتن اسکرین‌شات --گره N-1042' },
+        { type: 'info', msg: 'اسکرین‌شات از گره N-1042 دریافت شد' },
+        { type: 'error', msg: 'گره N-0891 مجدداً پاسخ نداد' },
+        { type: 'warning', msg: 'تلاش مجدد ۳ از ۵ برای گره N-0891' },
+        { type: 'success', msg: 'گره N-0891 بازیابی شد' },
+        { type: 'command', msg: 'دستور ارسال شد: ضبط کلید --شروع --همه گره‌ها' },
+        { type: 'info', msg: 'ضبط کلید روی ۳۴ گره فعال شد' },
+        { type: 'success', msg: '۱۲ ضربه کلید جدید ضبط شد' }
+    ];
+
+    setInterval(() => {
+        const entry = randomLogs[Math.floor(Math.random() * randomLogs.length)];
+        const timeClass = entry.type === 'success' ? 'success' :
+                          entry.type === 'error' ? 'error' :
+                          entry.type === 'command' ? 'command' :
+                          entry.type === 'warning' ? 'warning' : 'info';
+        const line = `[<span class="time">${getRealTime()}</span>] <span class="${timeClass}">${entry.msg}</span>`;
+        logBox.innerHTML += line + '\n';
+        logBox.scrollTop = logBox.scrollHeight;
+    }, 5000);
+
+    // ========== تغییر تعداد گره‌ها ==========
+    const nodeCount = document.getElementById('nodeCount');
+    const nodeCountFooter = document.getElementById('nodeCountFooter');
+    let nodes = 47;
+    setInterval(() => {
+        const change = Math.floor(Math.random() * 5) - 2;
+        nodes = Math.max(40, Math.min(58, nodes + change));
+        nodeCount.innerText = nodes;
+        nodeCountFooter.innerText = nodes;
+    }, 7000);
+
+    // ========== اجرای شمارنده ==========
+    updateVisitor();
+</script>
+</body>
+</html>
